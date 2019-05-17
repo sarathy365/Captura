@@ -443,6 +443,8 @@ namespace Captura
 
             ViewModel.Settings.Keystrokes.Display = StartOptions.Keys;
 
+            ViewModel.Settings.Elapsed.Display = StartOptions.ElapseTime;
+
             if (File.Exists(StartOptions.FileName))
             {
                 if (!StartOptions.Overwrite)
@@ -467,6 +469,10 @@ namespace Captura
 
             ViewModel.Settings.Audio.Quality = StartOptions.AudioQuality;
             ViewModel.Settings.Video.Quality = StartOptions.VideoQuality;
+
+            ViewModel.Settings.FFmpeg.Resize = StartOptions.FfmpegResize;
+            ViewModel.Settings.FFmpeg.ResizeWidth = StartOptions.FfmpegResizeWidth;
+            ViewModel.Settings.FFmpeg.ResizeHeight = StartOptions.FfmpegResizeHeight;
 
             if (!ViewModel.RecordingViewModel.RecordCommand.CanExecute(null))
             {

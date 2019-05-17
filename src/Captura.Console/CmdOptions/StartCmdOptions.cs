@@ -26,6 +26,18 @@ namespace Captura
         [Option("delay", HelpText = "Milliseconds to wait before starting recording.")]
         public int Delay { get; set; }
 
+        [Option("elapsetime", HelpText = "Include elapse time (default = false).")]
+        public bool ElapseTime { get; set; }
+
+        [Option("ffmpegresize", HelpText = "Resize the video for FFMPEG format (default = false).")]
+        public bool FfmpegResize { get; set; }
+
+        [Option("ffmpegresizewidth", HelpText = "Width of the video for FFMPEG format (default = 640).")]
+        public int FfmpegResizeWidth { get; set; }
+
+        [Option("ffmpegresizeheight", HelpText = "Height of the video for FFMPEG format (default = 480).")]
+        public int FfmpegResizeHeight { get; set; }
+
         [Option('t', "length", HelpText = "Length of Recording in seconds.")]
         public int Length { get; set; }
 
