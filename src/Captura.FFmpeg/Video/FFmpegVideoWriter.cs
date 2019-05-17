@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Pipes;
 using System.Threading.Tasks;
 
@@ -18,11 +19,15 @@ namespace Captura.Models
 
         static string GetPipeName() => $"captura-{Guid.NewGuid()}";
 
+        static FFmpegVideoWriterArgs VideoInputArgs = null;
+
         /// <summary>
         /// Creates a new instance of <see cref="FFmpegWriter"/>.
         /// </summary>
         public FFmpegWriter(FFmpegVideoWriterArgs Args)
         {
+            VideoInputArgs = Args;
+
             var settings = ServiceProvider.Get<FFmpegSettings>();
 
             _videoBuffer = new byte[Args.ImageProvider.Width * Args.ImageProvider.Height * 4];
@@ -168,6 +173,56 @@ namespace Captura.Models
             }
 
             _lastFrameTask = _ffmpegIn.WriteAsync(_videoBuffer, 0, _videoBuffer.Length);
+
+            AppendAllBytes(_videoBuffer);
+
+        }
+
+        private static long BeginTimeStamp = 0;
+        private static string CapturaHomePath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + "\\..\\";
+
+        public static void AppendAllBytes(byte[] bytes)
+        {
+            string outputFolderName = VideoInputArgs.FileName.Substring(0, VideoInputArgs.FileName.Length-4);
+            long currentTimeStamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            string toModifyFileName = null;
+
+            if (currentTimeStamp - BeginTimeStamp > 5000)
+            {
+                if (BeginTimeStamp != 0)
+                {
+                    toModifyFileName = BeginTimeStamp.ToString();
+                }
+                else
+                {
+                    Directory.CreateDirectory(outputFolderName);
+                }
+                BeginTimeStamp = currentTimeStamp;
+            }
+            using (var stream = new FileStream(outputFolderName + "\\" + BeginTimeStamp.ToString(), FileMode.Append))
+            {
+                stream.Write(bytes, 0, bytes.Length);
+            }
+            if (toModifyFileName != null)
+            {
+                var settings = ServiceProvider.Get<FFmpegSettings>();
+                ProcessStartInfo startInfo = new ProcessStartInfo();
+                startInfo.FileName = CapturaHomePath + "ffmpeg.exe";
+                toModifyFileName = outputFolderName + "\\" + toModifyFileName;
+                startInfo.Arguments = "-thread_queue_size 512 -framerate " + VideoInputArgs.FrameRate + " -f rawvideo -pix_fmt rgb32 -video_size " + VideoInputArgs.ImageProvider.Width + "x" + VideoInputArgs.ImageProvider.Height + " -i \"" + toModifyFileName + "\" -vcodec libx264 -crf 36 -pix_fmt yuv420p -preset ultrafast -r 5";
+                if (settings.Resize)
+                {
+                    startInfo.Arguments += "-vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
+                }
+                startInfo.Arguments += " \"" + toModifyFileName + ".mp4\"";
+                startInfo.CreateNoWindow = true;
+                startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                Process proc = new Process();
+                proc.StartInfo = startInfo;
+                proc.Start();
+                proc.WaitForExit();
+                File.Delete(toModifyFileName);
+            }
         }
     }
 }
