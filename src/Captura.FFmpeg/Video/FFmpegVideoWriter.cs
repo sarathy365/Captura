@@ -20,15 +20,24 @@ namespace Captura.Models
         static string GetPipeName() => $"captura-{Guid.NewGuid()}";
 
         static FFmpegVideoWriterArgs VideoInputArgs = null;
+        static string additionalVideoInputArgsStringPre = null;
+        static string additionalVideoInputArgsStringPost = null;
 
         /// <summary>
         /// Creates a new instance of <see cref="FFmpegWriter"/>.
         /// </summary>
         public FFmpegWriter(FFmpegVideoWriterArgs Args)
         {
-            VideoInputArgs = Args;
 
             var settings = ServiceProvider.Get<FFmpegSettings>();
+
+            VideoInputArgs = Args;
+            additionalVideoInputArgsStringPre = " -thread_queue_size 512 -framerate " + Args.FrameRate + " -f rawvideo -pix_fmt rgb32 -video_size " + Args.ImageProvider.Width + "x" + Args.ImageProvider.Height + " -i";
+            additionalVideoInputArgsStringPost = " -vcodec libx264 -crf 36 -pix_fmt yuv420p -preset ultrafast -r 5";
+            if (settings.Resize)
+            {
+                additionalVideoInputArgsStringPost += " -vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
+            }
 
             _videoBuffer = new byte[Args.ImageProvider.Width * Args.ImageProvider.Height * 4];
 
@@ -196,6 +205,7 @@ namespace Captura.Models
                 else
                 {
                     Directory.CreateDirectory(outputFolderName);
+                    File.WriteAllLines(outputFolderName + "\\" + "record.info", new string[] { additionalVideoInputArgsStringPre, additionalVideoInputArgsStringPost });
                 }
                 BeginTimeStamp = currentTimeStamp;
             }
@@ -205,16 +215,10 @@ namespace Captura.Models
             }
             if (toModifyFileName != null)
             {
-                var settings = ServiceProvider.Get<FFmpegSettings>();
                 ProcessStartInfo startInfo = new ProcessStartInfo();
                 startInfo.FileName = CapturaHomePath + "ffmpeg.exe";
                 toModifyFileName = outputFolderName + "\\" + toModifyFileName;
-                startInfo.Arguments = "-thread_queue_size 512 -framerate " + VideoInputArgs.FrameRate + " -f rawvideo -pix_fmt rgb32 -video_size " + VideoInputArgs.ImageProvider.Width + "x" + VideoInputArgs.ImageProvider.Height + " -i \"" + toModifyFileName + "\" -vcodec libx264 -crf 36 -pix_fmt yuv420p -preset ultrafast -r 5";
-                if (settings.Resize)
-                {
-                    startInfo.Arguments += "-vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
-                }
-                startInfo.Arguments += " \"" + toModifyFileName + ".mp4\"";
+                startInfo.Arguments = additionalVideoInputArgsStringPre + " \"" + toModifyFileName + "\"" + additionalVideoInputArgsStringPost + " \"" + toModifyFileName + ".mp4\"";
                 startInfo.CreateNoWindow = true;
                 startInfo.WindowStyle = ProcessWindowStyle.Hidden;
                 Process proc = new Process();
