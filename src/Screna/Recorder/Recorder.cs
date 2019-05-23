@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Captura;
@@ -31,6 +32,9 @@ namespace Screna
         readonly Task _writeTask, _recordTask;
 
         readonly object _syncLock = new object();
+
+        private static readonly string captureRecordLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_record.log";
+
         #endregion
 
         /// <summary>
@@ -109,6 +113,7 @@ namespace Screna
             }
             catch (Exception e)
             {
+                File.AppendAllText(@captureRecordLogPath, "DoWrite() - " + e.Message + " - " + e.StackTrace);
                 lock (_syncLock)
                 {
                     if (!_disposed)
@@ -215,6 +220,7 @@ namespace Screna
             }
             catch (Exception e)
             {
+                File.AppendAllText(@captureRecordLogPath, "DoRecord() - " + e.Message + " - " + e.StackTrace);
                 lock (_syncLock)
                 {
                     if (!_disposed)

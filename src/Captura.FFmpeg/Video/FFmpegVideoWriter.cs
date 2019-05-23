@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Captura.Models
@@ -22,22 +24,29 @@ namespace Captura.Models
         static FFmpegVideoWriterArgs VideoInputArgs = null;
         static string additionalVideoInputArgsStringPre = null;
         static string additionalVideoInputArgsStringPost = null;
+        static Queue<byte[]> framesToBeWritten = null;
+
+        private static readonly string captureVideoLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_video.log";
 
         /// <summary>
         /// Creates a new instance of <see cref="FFmpegWriter"/>.
         /// </summary>
         public FFmpegWriter(FFmpegVideoWriterArgs Args)
         {
-
+            framesToBeWritten = new Queue<byte[]>();
             var settings = ServiceProvider.Get<FFmpegSettings>();
-
             VideoInputArgs = Args;
             additionalVideoInputArgsStringPre = " -thread_queue_size 512 -framerate " + Args.FrameRate + " -f rawvideo -pix_fmt rgb32 -video_size " + Args.ImageProvider.Width + "x" + Args.ImageProvider.Height + " -i";
-            additionalVideoInputArgsStringPost = " -vcodec libx264 -crf 36 -pix_fmt yuv420p -preset ultrafast -r 5";
+            //var qscale = 31 - ((VideoInputArgs.VideoQuality - 1) * 30) / 99;
+            //additionalVideoInputArgsStringPost = " -vcodec libxvid -qscale:v " + qscale;
+            var crf = (51 * (100 - VideoInputArgs.VideoQuality)) / 99;
+            additionalVideoInputArgsStringPost = " -vcodec libx264 -crf " + crf + " -pix_fmt " + settings.X264.PixelFormat + " -preset " + settings.X264.Preset;
+            additionalVideoInputArgsStringPost += " -r " + Args.FrameRate;
             if (settings.Resize)
             {
                 additionalVideoInputArgsStringPost += " -vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
             }
+            (new Thread(ThreadForAppendFrames)).Start();
 
             _videoBuffer = new byte[Args.ImageProvider.Width * Args.ImageProvider.Height * 4];
 
@@ -155,36 +164,58 @@ namespace Captura.Models
         /// </summary>
         public void WriteFrame(IBitmapFrame Frame)
         {
-            if (_ffmpegProcess.HasExited)
+            try
             {
-                Frame.Dispose();
-                throw new Exception($"An Error Occurred with FFmpeg, Exit Code: {_ffmpegProcess.ExitCode}");
-            }
-            
-            if (_firstFrame)
-            {
-                if (!_ffmpegIn.WaitForConnection(5000))
+                if (_ffmpegProcess.HasExited)
                 {
-                    throw new Exception("Cannot connect Video pipe to FFmpeg");
+                    Frame.Dispose();
+                    throw new Exception($"An Error Occurred with FFmpeg, Exit Code: {_ffmpegProcess.ExitCode}");
                 }
 
-                _firstFrame = false;
-            }
-
-            _lastFrameTask?.Wait();
-
-            if (!(Frame is RepeatFrame))
-            {
-                using (Frame)
+                if (_firstFrame)
                 {
-                    Frame.CopyTo(_videoBuffer, _videoBuffer.Length);
+                    if (!_ffmpegIn.WaitForConnection(5000))
+                    {
+                        throw new Exception("Cannot connect Video pipe to FFmpeg");
+                    }
+
+                    _firstFrame = false;
+                }
+
+                _lastFrameTask?.Wait();
+
+                if (!(Frame is RepeatFrame))
+                {
+                    using (Frame)
+                    {
+                        Frame.CopyTo(_videoBuffer, _videoBuffer.Length);
+                    }
+                }
+
+                _lastFrameTask = _ffmpegIn.WriteAsync(_videoBuffer, 0, _videoBuffer.Length);
+
+                framesToBeWritten.Enqueue(_videoBuffer);
+            }
+            catch (Exception e)
+            {
+                File.AppendAllText(@captureVideoLogPath, "WriteFrame() - " + e.Message + " - " + e.StackTrace);
+                throw e;
+            }
+        }
+
+        private static void ThreadForAppendFrames()
+        {
+            while (true)
+            {
+                if (framesToBeWritten.Count > 0)
+                {
+                    AppendAllBytes(framesToBeWritten.Dequeue());
+                }
+                else
+                {
+                    Thread.Sleep(300);
                 }
             }
-
-            _lastFrameTask = _ffmpegIn.WriteAsync(_videoBuffer, 0, _videoBuffer.Length);
-
-            AppendAllBytes(_videoBuffer);
-
         }
 
         private static long BeginTimeStamp = 0;
@@ -192,40 +223,48 @@ namespace Captura.Models
 
         public static void AppendAllBytes(byte[] bytes)
         {
-            string outputFolderName = VideoInputArgs.FileName.Substring(0, VideoInputArgs.FileName.Length-4);
-            long currentTimeStamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-            string toModifyFileName = null;
+            try
+            {
+                string outputFolderName = VideoInputArgs.FileName.Substring(0, VideoInputArgs.FileName.Length - 4);
+                long currentTimeStamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+                string toModifyFileName = null;
 
-            if (currentTimeStamp - BeginTimeStamp > 5000)
-            {
-                if (BeginTimeStamp != 0)
+                if (currentTimeStamp - BeginTimeStamp > 10000)
                 {
-                    toModifyFileName = BeginTimeStamp.ToString();
+                    if (BeginTimeStamp != 0)
+                    {
+                        toModifyFileName = BeginTimeStamp.ToString();
+                    }
+                    else
+                    {
+                        Directory.CreateDirectory(outputFolderName);
+                        File.WriteAllLines(outputFolderName + "\\" + "record.info", new string[] { additionalVideoInputArgsStringPre, additionalVideoInputArgsStringPost });
+                    }
+                    BeginTimeStamp = currentTimeStamp;
                 }
-                else
+                using (var stream = new FileStream(outputFolderName + "\\" + BeginTimeStamp.ToString(), FileMode.Append))
                 {
-                    Directory.CreateDirectory(outputFolderName);
-                    File.WriteAllLines(outputFolderName + "\\" + "record.info", new string[] { additionalVideoInputArgsStringPre, additionalVideoInputArgsStringPost });
+                    stream.Write(bytes, 0, bytes.Length);
                 }
-                BeginTimeStamp = currentTimeStamp;
+                if (toModifyFileName != null)
+                {
+                    ProcessStartInfo startInfo = new ProcessStartInfo();
+                    startInfo.FileName = CapturaHomePath + "ffmpeg.exe";
+                    toModifyFileName = outputFolderName + "\\" + toModifyFileName;
+                    startInfo.Arguments = additionalVideoInputArgsStringPre + " \"" + toModifyFileName + "\"" + additionalVideoInputArgsStringPost + " \"" + toModifyFileName + ".mp4\"";
+                    startInfo.CreateNoWindow = true;
+                    startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                    Process proc = new Process();
+                    proc.StartInfo = startInfo;
+                    proc.Start();
+                    proc.WaitForExit();
+                    File.Delete(toModifyFileName);
+                }
             }
-            using (var stream = new FileStream(outputFolderName + "\\" + BeginTimeStamp.ToString(), FileMode.Append))
+            catch (Exception e)
             {
-                stream.Write(bytes, 0, bytes.Length);
-            }
-            if (toModifyFileName != null)
-            {
-                ProcessStartInfo startInfo = new ProcessStartInfo();
-                startInfo.FileName = CapturaHomePath + "ffmpeg.exe";
-                toModifyFileName = outputFolderName + "\\" + toModifyFileName;
-                startInfo.Arguments = additionalVideoInputArgsStringPre + " \"" + toModifyFileName + "\"" + additionalVideoInputArgsStringPost + " \"" + toModifyFileName + ".mp4\"";
-                startInfo.CreateNoWindow = true;
-                startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-                Process proc = new Process();
-                proc.StartInfo = startInfo;
-                proc.Start();
-                proc.WaitForExit();
-                File.Delete(toModifyFileName);
+                File.AppendAllText(@captureVideoLogPath, "AppendAllBytes() - " + e.Message + " - " + e.StackTrace);
+                throw e;
             }
         }
     }
