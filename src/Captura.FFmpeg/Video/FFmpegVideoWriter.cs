@@ -28,6 +28,16 @@ namespace Captura.Models
 
         private static readonly string captureVideoLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_video.log";
 
+        private void WriteLog(string content)
+        {
+            try
+            {
+                File.AppendAllText(@captureVideoLogPath, DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ": " + content + "\n");
+            }
+            catch (Exception)
+            { }
+        }
+
         /// <summary>
         /// Creates a new instance of <see cref="FFmpegWriter"/>.
         /// </summary>
@@ -198,12 +208,12 @@ namespace Captura.Models
             }
             catch (Exception e)
             {
-                File.AppendAllText(@captureVideoLogPath, "WriteFrame() - " + e.Message + " - " + e.StackTrace);
+                WriteLog("WriteFrame() - " + e.Message + " - " + e.StackTrace);
                 throw e;
             }
         }
 
-        private static void ThreadForAppendFrames()
+        private void ThreadForAppendFrames()
         {
             while (true)
             {
@@ -221,7 +231,7 @@ namespace Captura.Models
         private static long BeginTimeStamp = 0;
         private static string CapturaHomePath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + "\\..\\";
 
-        public static void AppendAllBytes(byte[] bytes)
+        public void AppendAllBytes(byte[] bytes)
         {
             try
             {
@@ -263,7 +273,7 @@ namespace Captura.Models
             }
             catch (Exception e)
             {
-                File.AppendAllText(@captureVideoLogPath, "AppendAllBytes() - " + e.Message + " - " + e.StackTrace);
+                WriteLog("AppendAllBytes() - " + e.Message + " - " + e.StackTrace);
                 throw e;
             }
         }

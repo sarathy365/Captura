@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -22,7 +23,7 @@ namespace Screna
         readonly IImageProvider _imageProvider;
 
         readonly int _frameRate, _maxFrameCount, _congestionFrameCount;
-        bool _congestion;
+        bool _congestion, _exitOnMaxFrameReach;
 
         readonly BlockingCollection<IBitmapFrame> _frames;
         readonly Stopwatch _sw;
@@ -33,9 +34,16 @@ namespace Screna
 
         readonly object _syncLock = new object();
 
-        private static readonly string captureRecordLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_record.log";
-
+        private static readonly string homeFolder = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\";
+        private static readonly string captureRecordLogPath = homeFolder + @"logs\captura_record.log";
+        private static readonly string capturePropertiesPath = homeFolder + @"conf\captura.properties";
+        private Dictionary<string, string> capturaProperites = new Dictionary<string, string>();
         #endregion
+
+        private void WriteLog(string content)
+        {
+            File.AppendAllText(@captureRecordLogPath, DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ": " + content + "\n");
+        }
 
         /// <summary>
         /// Creates a new instance of <see cref="IRecorder"/> writing to <see cref="IVideoFileWriter"/>.
@@ -46,6 +54,18 @@ namespace Screna
         /// <param name="AudioProvider">The audio source. null = no audio.</param>
         public Recorder(IVideoFileWriter VideoWriter, IImageProvider ImageProvider, int FrameRate, IAudioProvider AudioProvider = null)
         {
+            if (File.Exists(capturePropertiesPath))
+            {
+                foreach (string row in File.ReadAllLines(capturePropertiesPath))
+                {
+                    string[] rowValues = row.Split('=');
+                    if (!row.StartsWith("#") && rowValues.Length == 2)
+                    {
+                        capturaProperites.Add(rowValues[0].Trim(), rowValues[1].Trim());
+                    }
+                }
+            }
+
             _videoWriter = VideoWriter ?? throw new ArgumentNullException(nameof(VideoWriter));
             _imageProvider = ImageProvider ?? throw new ArgumentNullException(nameof(ImageProvider));
             _audioProvider = AudioProvider;
@@ -56,6 +76,35 @@ namespace Screna
             _frameRate = FrameRate;
             _congestionFrameCount = _frameRate * 2; // 2 seconds
             _maxFrameCount = _frameRate * 4; // 4 seconds
+            _exitOnMaxFrameReach = true;
+
+            if (capturaProperites.ContainsKey("CONGESTION_FRAME_RATE_IN_SECONDS"))
+            {
+                try
+                {
+                    _congestionFrameCount = _frameRate * int.Parse(capturaProperites["CONGESTION_FRAME_RATE_IN_SECONDS"]);
+                }
+                catch (Exception)
+                { }
+            }
+            if (capturaProperites.ContainsKey("MAX_FRAME_RATE_IN_SECONDS"))
+            {
+                try
+                {
+                    _maxFrameCount = _frameRate * int.Parse(capturaProperites["MAX_FRAME_RATE_IN_SECONDS"]);
+                }
+                catch (Exception)
+                { }
+            }
+            if (capturaProperites.ContainsKey("EXIT_MAX_FRAME_REACH"))
+            {
+                try
+                {
+                    _exitOnMaxFrameReach = bool.Parse(capturaProperites["EXIT_MAX_FRAME_REACH"]);
+                }
+                catch (Exception)
+                { }
+            }
 
             _continueCapturing = new ManualResetEvent(false);
 
@@ -113,7 +162,7 @@ namespace Screna
             }
             catch (Exception e)
             {
-                File.AppendAllText(@captureRecordLogPath, "DoWrite() - " + e.Message + " - " + e.StackTrace);
+                WriteLog("DoWrite() - " + e.Message + " - " + e.StackTrace);
                 lock (_syncLock)
                 {
                     if (!_disposed)
@@ -170,18 +219,22 @@ namespace Screna
                     {
                         _congestion = true;
 
+                        WriteLog("Congestion: ON");
                         Console.WriteLine("Congestion: ON");
                     }
                     else if (_congestion && _frames.Count < _congestionFrameCount / 2)
                     {
                         _congestion = false;
 
+                        WriteLog("Congestion: OFF");
                         Console.WriteLine("Congestion: OFF");
                     }
 
                     if (_frames.Count > _maxFrameCount)
                     {
-                        throw new Exception(@"System can't keep up with the Recording. Frames are not being written. Retry again or try with a smaller region, lower Frame Rate or another Codec.");
+                        WriteLog("Max-Frame reached - Memory issue might arise.");
+                        if (_exitOnMaxFrameReach)
+                            throw new Exception(@"System can't keep up with the Recording. Frames are not being written. Retry again or try with a smaller region, lower Frame Rate or another Codec.");
                     }
 
                     var timestamp = DateTime.Now;
@@ -220,7 +273,7 @@ namespace Screna
             }
             catch (Exception e)
             {
-                File.AppendAllText(@captureRecordLogPath, "DoRecord() - " + e.Message + " - " + e.StackTrace);
+                WriteLog("DoRecord() - " + e.Message + " - " + e.StackTrace);
                 lock (_syncLock)
                 {
                     if (!_disposed)
