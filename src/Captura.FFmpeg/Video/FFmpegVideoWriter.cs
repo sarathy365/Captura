@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,8 +25,10 @@ namespace Captura.Models
         static string GetPipeName() => $"captura-{Guid.NewGuid()}";
 
         static FFmpegVideoWriterArgs VideoInputArgs = null;
-        static string additionalVideoInputArgsStringPre = null;
-        static string additionalVideoInputArgsStringPost = null;
+        static string outputFolderName = null;
+        static string additionalVideoInputArgsPre = null;
+        static string additionalVideoInputArgsPost = null;
+
         static Queue<byte[]> framesToBeWritten = null;
 
         private static readonly string captureVideoLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_video.log";
@@ -46,16 +51,16 @@ namespace Captura.Models
             framesToBeWritten = new Queue<byte[]>();
             var settings = ServiceProvider.Get<FFmpegSettings>();
             VideoInputArgs = Args;
-            additionalVideoInputArgsStringPre = " -thread_queue_size 512 -framerate " + Args.FrameRate + " -f rawvideo -pix_fmt rgb32 -video_size " + Args.ImageProvider.Width + "x" + Args.ImageProvider.Height + " -i";
-            //var qscale = 31 - ((VideoInputArgs.VideoQuality - 1) * 30) / 99;
-            //additionalVideoInputArgsStringPost = " -vcodec libxvid -qscale:v " + qscale;
             var crf = (51 * (100 - VideoInputArgs.VideoQuality)) / 99;
-            additionalVideoInputArgsStringPost = " -vcodec libx264 -crf " + crf + " -pix_fmt " + settings.X264.PixelFormat + " -preset " + settings.X264.Preset;
-            additionalVideoInputArgsStringPost += " -r " + Args.FrameRate;
+
+            outputFolderName = Args.FileName.Substring(0, VideoInputArgs.FileName.Length - 4);
+            additionalVideoInputArgsPre = " -r " + Args.FrameRate + " -start_number 1 -i \"";
+            additionalVideoInputArgsPost = "_%d.png\" -s " + Args.ImageProvider.Width + "*" + Args.ImageProvider.Height + " -vcodec libx264 -crf " + crf + " -pix_fmt " + settings.X264.PixelFormat + " -preset " + settings.X264.Preset;
             if (settings.Resize)
             {
-                additionalVideoInputArgsStringPost += " -vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
+                additionalVideoInputArgsPost += " -vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
             }
+
             (new Thread(ThreadForAppendFrames)).Start();
 
             _videoBuffer = new byte[Args.ImageProvider.Width * Args.ImageProvider.Height * 4];
@@ -229,16 +234,41 @@ namespace Captura.Models
         }
 
         private static long BeginTimeStamp = 0;
-        private static string CapturaHomePath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + "\\..\\";
+        private static Dictionary<long, long> TimeStamps = new Dictionary<long, long>();
+        private static readonly string CapturaHomePath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + "\\..\\";
+
+        private void WriteBitmapFile(string filename, int width, int height, byte[] imageData)
+        {
+            byte[] newData = new byte[imageData.Length];
+            for (int x = 0; x < imageData.Length; x += 4)
+            {
+                byte[] pixel = new byte[4];
+                Array.Copy(imageData, x, pixel, 0, 4);
+                byte r = pixel[0];
+                byte g = pixel[1];
+                byte b = pixel[2];
+                byte a = pixel[3];
+                byte[] newPixel = new byte[] { r, g, b, a };
+                Array.Copy(newPixel, 0, newData, x, 4);
+            }
+            imageData = newData;
+            using (var stream = new MemoryStream(imageData))
+            using (var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+            {
+                BitmapData bmpData = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, bmp.PixelFormat);
+                IntPtr pNative = bmpData.Scan0;
+                Marshal.Copy(imageData, 0, pNative, imageData.Length);
+                bmp.UnlockBits(bmpData);
+                bmp.Save(filename);
+            }
+        }
 
         public void AppendAllBytes(byte[] bytes)
         {
             try
             {
-                string outputFolderName = VideoInputArgs.FileName.Substring(0, VideoInputArgs.FileName.Length - 4);
                 long currentTimeStamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
                 string toModifyFileName = null;
-
                 if (currentTimeStamp - BeginTimeStamp > 10000)
                 {
                     if (BeginTimeStamp != 0)
@@ -248,27 +278,30 @@ namespace Captura.Models
                     else
                     {
                         Directory.CreateDirectory(outputFolderName);
-                        File.WriteAllLines(outputFolderName + "\\" + "record.info", new string[] { additionalVideoInputArgsStringPre, additionalVideoInputArgsStringPost });
+                        File.WriteAllLines(outputFolderName + "\\" + "record.info", new string[] { additionalVideoInputArgsPre, additionalVideoInputArgsPost });
                     }
                     BeginTimeStamp = currentTimeStamp;
+                    TimeStamps[BeginTimeStamp] = 1;
+                    File.WriteAllText(outputFolderName + "\\" + BeginTimeStamp.ToString(), BeginTimeStamp.ToString());
                 }
-                using (var stream = new FileStream(outputFolderName + "\\" + BeginTimeStamp.ToString(), FileMode.Append))
-                {
-                    stream.Write(bytes, 0, bytes.Length);
-                }
+                WriteBitmapFile(outputFolderName + "\\" + BeginTimeStamp + "_" + TimeStamps[BeginTimeStamp]++ + ".png", VideoInputArgs.ImageProvider.Width, VideoInputArgs.ImageProvider.Height, bytes);
                 if (toModifyFileName != null)
                 {
                     ProcessStartInfo startInfo = new ProcessStartInfo();
                     startInfo.FileName = CapturaHomePath + "ffmpeg.exe";
-                    toModifyFileName = outputFolderName + "\\" + toModifyFileName;
-                    startInfo.Arguments = additionalVideoInputArgsStringPre + " \"" + toModifyFileName + "\"" + additionalVideoInputArgsStringPost + " \"" + toModifyFileName + ".mp4\"";
+                    startInfo.Arguments = additionalVideoInputArgsPre + outputFolderName + "\\" + toModifyFileName + additionalVideoInputArgsPost + " \"" + outputFolderName + "\\" + toModifyFileName + ".mp4\"";
                     startInfo.CreateNoWindow = true;
                     startInfo.WindowStyle = ProcessWindowStyle.Hidden;
                     Process proc = new Process();
                     proc.StartInfo = startInfo;
                     proc.Start();
                     proc.WaitForExit();
-                    File.Delete(toModifyFileName);
+                    File.Delete(outputFolderName + "\\" + toModifyFileName);
+                    string[] filePaths = Directory.GetFiles(outputFolderName, toModifyFileName + "_*.png", SearchOption.TopDirectoryOnly);
+                    foreach (string filePath in filePaths)
+                    {
+                        File.Delete(filePath);
+                    }
                 }
             }
             catch (Exception e)
