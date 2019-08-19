@@ -48,6 +48,12 @@ namespace Captura
             set => Set(value);
         }
 
+        public bool RawBackup
+        {
+            get => Get(false);
+            set => Set(value);
+        }
+
         public X264Settings X264 { get; } = new X264Settings();
     }
 }

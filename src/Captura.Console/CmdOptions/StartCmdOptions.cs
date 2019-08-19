@@ -38,6 +38,9 @@ namespace Captura
         [Option("ffmpegresizeheight", HelpText = "Height of the video for FFMPEG format (default = 480).")]
         public int FfmpegResizeHeight { get; set; }
 
+        [Option("ffmpegrawbackup", HelpText = "Write FFMPEG raw files as backup.")]
+        public bool FfmpegRawBackup { get; set; }
+
         [Option('t', "length", HelpText = "Length of Recording in seconds.")]
         public int Length { get; set; }
 

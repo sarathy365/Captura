@@ -473,6 +473,7 @@ namespace Captura
             ViewModel.Settings.FFmpeg.Resize = StartOptions.FfmpegResize;
             ViewModel.Settings.FFmpeg.ResizeWidth = StartOptions.FfmpegResizeWidth;
             ViewModel.Settings.FFmpeg.ResizeHeight = StartOptions.FfmpegResizeHeight;
+            ViewModel.Settings.FFmpeg.RawBackup = StartOptions.FfmpegRawBackup;
 
             if (!ViewModel.RecordingViewModel.RecordCommand.CanExecute(null))
             {

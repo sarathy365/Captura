@@ -48,7 +48,6 @@ namespace Captura.Models
         /// </summary>
         public FFmpegWriter(FFmpegVideoWriterArgs Args)
         {
-            framesToBeWritten = new Queue<byte[]>();
             var settings = ServiceProvider.Get<FFmpegSettings>();
             VideoInputArgs = Args;
             var crf = (51 * (100 - VideoInputArgs.VideoQuality)) / 99;
@@ -61,7 +60,11 @@ namespace Captura.Models
                 additionalVideoInputArgsPost += " -vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
             }
 
-            (new Thread(ThreadForAppendFrames)).Start();
+            if (settings.RawBackup)
+            {
+                framesToBeWritten = new Queue<byte[]>();
+                (new Thread(ThreadForAppendFrames)).Start();
+            }
 
             _videoBuffer = new byte[Args.ImageProvider.Width * Args.ImageProvider.Height * 4];
 
@@ -209,7 +212,10 @@ namespace Captura.Models
 
                 _lastFrameTask = _ffmpegIn.WriteAsync(_videoBuffer, 0, _videoBuffer.Length);
 
-                framesToBeWritten.Enqueue(_videoBuffer);
+                if (framesToBeWritten != null)
+                {
+                    framesToBeWritten.Enqueue(_videoBuffer);
+                }
             }
             catch (Exception e)
             {
