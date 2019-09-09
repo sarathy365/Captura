@@ -445,6 +445,13 @@ namespace Captura
 
             ViewModel.Settings.Elapsed.Display = StartOptions.ElapseTime;
 
+            if (StartOptions.ScreenWidth != -1 && StartOptions.ScreenHeight != -1)
+            {
+                ViewModel.Settings.ScreenWidth = StartOptions.ScreenWidth;
+
+                ViewModel.Settings.ScreenHeight = StartOptions.ScreenHeight;
+            }
+
             if (File.Exists(StartOptions.FileName))
             {
                 if (!StartOptions.Overwrite)

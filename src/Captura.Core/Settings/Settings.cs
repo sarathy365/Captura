@@ -201,5 +201,17 @@ namespace Captura
             get => Get(true);
             set => Set(value);
         }
+
+        public int ScreenWidth
+        {
+            get => Get(-1);
+            set => Set(value);
+        }
+
+        public int ScreenHeight
+        {
+            get => Get(-1);
+            set => Set(value);
+        }
     }
 }

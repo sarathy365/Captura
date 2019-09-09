@@ -614,6 +614,14 @@ namespace Captura.ViewModels
             if (imageProvider == null)
                 return null;
 
+            if (_videoViewModel.Settings.ScreenWidth != -1 && _videoViewModel.Settings.ScreenHeight != -1)
+            {
+                var region = WindowProvider.DesktopRectangle;
+                region.Width = _videoViewModel.Settings.ScreenWidth;
+                region.Height = _videoViewModel.Settings.ScreenHeight;
+                imageProvider = new RegionProvider(region, true);
+            }
+
             var overlays = new List<IOverlay>
             {
                 new CensorOverlay(Settings.Censored)

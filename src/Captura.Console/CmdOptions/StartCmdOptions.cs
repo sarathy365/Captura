@@ -29,6 +29,12 @@ namespace Captura
         [Option("elapsetime", HelpText = "Include elapse time (default = false).")]
         public bool ElapseTime { get; set; }
 
+        [Option("screenwidth", Default = -1, HelpText = "Width of the screen (resolution).")]
+        public int ScreenWidth { get; set; }
+
+        [Option("screenheight", Default = -1, HelpText = "Height of the screen (resolution).")]
+        public int ScreenHeight { get; set; }
+
         [Option("ffmpegresize", HelpText = "Resize the video for FFMPEG format (default = false).")]
         public bool FfmpegResize { get; set; }
 

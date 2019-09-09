@@ -7,7 +7,7 @@
     <ProjectGuid>{CC710D4D-DFE8-4B31-BD7E-59AD80737E13}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <RootNamespace>Captura</RootNamespace>
-    <AssemblyName>captura-cli</AssemblyName>
+    <AssemblyName>SecurdenSessionProcessor</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <ErrorReport>prompt</ErrorReport>
@@ -25,7 +25,8 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>..\Captura\Images\Captura.ico</ApplicationIcon>
+    <ApplicationIcon>
+    </ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
