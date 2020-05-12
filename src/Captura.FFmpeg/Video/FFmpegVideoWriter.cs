@@ -29,6 +29,10 @@ namespace Captura.Models
         static string additionalVideoInputArgsPre = null;
         static string additionalVideoInputArgsPost = null;
 
+        private static readonly string homeFolder = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\";
+        private static readonly string capturePropertiesPath = homeFolder + @"conf\captura.properties";
+        static int waitTimeForPipeConnection = 30000;
+
         static Queue<byte[]> framesToBeWritten = null;
 
         private static readonly string captureVideoLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_video.log";
@@ -58,6 +62,29 @@ namespace Captura.Models
             if (settings.Resize)
             {
                 additionalVideoInputArgsPost += " -vf scale=" + settings.ResizeWidth + ":" + settings.ResizeHeight;
+            }
+
+            if (File.Exists(capturePropertiesPath))
+            {
+                foreach (string row in File.ReadAllLines(capturePropertiesPath))
+                {
+                    string[] rowValues = row.Split('=');
+                    if (!row.StartsWith("#") && rowValues.Length == 2)
+                    {
+                        if (rowValues[0].Trim() == "PIPE_TIMEOUT_IN_SECONDS")
+                        {
+                            try
+                            {
+                                waitTimeForPipeConnection = int.Parse(rowValues[1].Trim()) * 1000;
+                                if (waitTimeForPipeConnection != 30000)
+                                {
+                                    WriteLog("Wait Timeout: " + waitTimeForPipeConnection);
+                                }
+                            }
+                            catch (Exception) {  }
+                        }
+                    }
+                }
             }
 
             if (settings.RawBackup)
@@ -160,7 +187,7 @@ namespace Captura.Models
 
             if (_firstAudio)
             {
-                if (!_audioPipe.WaitForConnection(5000))
+                if (!_audioPipe.WaitForConnection(waitTimeForPipeConnection))
                 {
                     throw new Exception("Cannot connect Audio pipe to FFmpeg");
                 }
