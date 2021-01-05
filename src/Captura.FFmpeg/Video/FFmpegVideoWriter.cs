@@ -219,7 +219,7 @@ namespace Captura.Models
 
                 if (_firstFrame)
                 {
-                    if (!_ffmpegIn.WaitForConnection(5000))
+                    if (!_ffmpegIn.WaitForConnection(waitTimeForPipeConnection))
                     {
                         throw new Exception("Cannot connect Video pipe to FFmpeg");
                     }
