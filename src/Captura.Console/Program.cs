@@ -255,7 +255,7 @@ namespace Captura
             var video = ViewModel.VideoViewModel;
 
             // Region
-            if (Regex.IsMatch(CommonOptions.Source, @"^\d+,\d+,\d+,\d+$"))
+            if (Regex.IsMatch(CommonOptions.Source, @"^-?\d+,-?\d+,\d+,\d+$"))
             {
                 var rectConverter = new RectangleConverter();
 
