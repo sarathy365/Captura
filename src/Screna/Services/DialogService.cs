@@ -1,5 +1,4 @@
 ﻿using System.Windows.Forms;
-using Ookii.Dialogs;
 
 namespace Captura.Models
 {
@@ -8,10 +7,9 @@ namespace Captura.Models
     {
         public string PickFolder(string Current, string Description)
         {
-            using (var dlg = new VistaFolderBrowserDialog
+            using (var dlg = new FolderBrowserDialog
             {
                 SelectedPath = Current,
-                UseDescriptionForTitle = true,
                 Description = Description
             })
             {
