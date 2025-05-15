@@ -19,8 +19,11 @@ namespace Captura.Models
         readonly NamedPipeServerStream _audioPipe;
 
         readonly Process _ffmpegProcess;
+        readonly Process _segmentFfmpegProcess;
         readonly NamedPipeServerStream _ffmpegIn;
+        readonly NamedPipeServerStream _segmentFfmpegIn;
         readonly byte[] _videoBuffer;
+        readonly byte[] _segmentVideoBuffer;
 
         static string GetPipeName() => $"captura-{Guid.NewGuid()}";
 
@@ -34,6 +37,7 @@ namespace Captura.Models
         static int waitTimeForPipeConnection = 30000;
 
         static Queue<byte[]> framesToBeWritten = null;
+        static Queue<byte[]> segmentFramesToBeWritten = null;
 
         private static readonly string captureVideoLogPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().GetName().CodeBase).Substring(6) + @"\..\..\..\logs\captura_video.log";
 
@@ -87,11 +91,12 @@ namespace Captura.Models
                 }
             }
 
-            if (settings.RawBackup)
+            /*if (settings.RawBackup)
             {
                 framesToBeWritten = new Queue<byte[]>();
+                segmentFramesToBeWritten = new Queue<byte[]>();
                 (new Thread(ThreadForAppendFrames)).Start();
-            }
+            }*/
 
             _videoBuffer = new byte[Args.ImageProvider.Width * Args.ImageProvider.Height * 4];
 
@@ -111,7 +116,7 @@ namespace Captura.Models
             var output = argsBuilder.AddOutputFile(Args.FileName)
                 .AddArg(Args.VideoArgsProvider(Args.VideoQuality))
                 .SetFrameRate(Args.FrameRate);
-            
+
             if (settings.Resize)
             {
                 var width = settings.ResizeWidth;
@@ -147,6 +152,50 @@ namespace Captura.Models
 
             _ffmpegIn = new NamedPipeServerStream(videoPipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, _videoBuffer.Length);
 
+            if(settings.RawBackup)
+            {
+                var segmentVideoPipeName = GetPipeName();
+                var segmentArgsBuilder = new FFmpegArgsBuilder();
+                segmentArgsBuilder.AddInputPipe(segmentVideoPipeName)
+                    .AddArg("-thread_queue_size 512")
+                    .AddArg($"-framerate {Args.FrameRate}")
+                    .SetFormat("rawvideo")
+                    .AddArg("-pix_fmt rgb32")
+                    .SetVideoSize(Args.ImageProvider.Width, Args.ImageProvider.Height);
+
+                var gopSize = Args.FrameRate * 5;
+                var videoArgs = $"{Args.VideoArgsProvider(Args.VideoQuality)} -g {gopSize} -keyint_min {gopSize} -sc_threshold 0";
+
+                var output2 = segmentArgsBuilder.AddOutputFile(Args.SegmentFileName)
+                    .AddArg(videoArgs)
+                    .AddArg(Args.VideoArgsProvider(Args.VideoQuality))
+                    .SetFrameRate(Args.FrameRate)
+                    .AddArg("-f segment")
+                    .AddArg("-segment_time 5")
+                    .AddArg("-reset_timestamps 1");
+
+                if(settings.Resize)
+                {
+                    var width = settings.ResizeWidth;
+                    var height = settings.ResizeHeight;
+
+                    if (width % 2 == 1)
+                    {
+                        ++width;
+                    }
+
+                    if (height % 2 == 1)
+                    {
+                        ++height;
+                    }
+                    output2.AddArg($"-vf scale={width}:{height}");
+                }
+                output2.AddArg(Args.OutputArgs);
+
+                _segmentFfmpegIn = new NamedPipeServerStream(segmentVideoPipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, _videoBuffer.Length);
+                _segmentFfmpegProcess = FFmpegService.StartFFmpeg(segmentArgsBuilder.GetArgs(), Args.SegmentFileName);
+            }
+
             output.AddArg(Args.OutputArgs);
 
             _ffmpegProcess = FFmpegService.StartFFmpeg(argsBuilder.GetArgs(), Args.FileName);
@@ -159,9 +208,19 @@ namespace Captura.Models
         {
             _ffmpegIn.Dispose();
 
+            if (_segmentFfmpegIn != null)
+            {
+                _segmentFfmpegIn.Dispose();
+            }
+
             _audioPipe?.Dispose();
 
             _ffmpegProcess.WaitForExit();
+
+            if (_segmentFfmpegProcess != null)
+            {
+                _segmentFfmpegProcess.WaitForExit();
+            }
         }
 
         /// <summary>
@@ -201,8 +260,10 @@ namespace Captura.Models
         }
 
         bool _firstFrame = true;
+        bool _segmentFirstFrame = true;
 
         Task _lastFrameTask;
+        Task _lastSegmentFrameTask;
 
         /// <summary>
         /// Writes an Image frame.
@@ -211,7 +272,7 @@ namespace Captura.Models
         {
             try
             {
-                if (_ffmpegProcess.HasExited)
+                if (_ffmpegProcess.HasExited || (_segmentFfmpegProcess != null && _segmentFfmpegProcess.HasExited))
                 {
                     Frame.Dispose();
                     throw new Exception($"An Error Occurred with FFmpeg, Exit Code: {_ffmpegProcess.ExitCode}");
@@ -227,7 +288,21 @@ namespace Captura.Models
                     _firstFrame = false;
                 }
 
+                if(_segmentFirstFrame && _segmentFfmpegIn != null)
+                {
+                    if(!_segmentFfmpegIn.WaitForConnection(waitTimeForPipeConnection))
+                    {
+                        throw new Exception("Cannot connect Video pipe 2 to FFmpeg");
+                    }
+                    _segmentFirstFrame = false;
+                }
+
                 _lastFrameTask?.Wait();
+
+                if(_segmentFfmpegIn != null)
+                {
+                    _lastSegmentFrameTask?.Wait();
+                }
 
                 if (!(Frame is RepeatFrame))
                 {
@@ -238,10 +313,18 @@ namespace Captura.Models
                 }
 
                 _lastFrameTask = _ffmpegIn.WriteAsync(_videoBuffer, 0, _videoBuffer.Length);
+                if (_segmentFfmpegIn != null)
+                {
+                    _lastSegmentFrameTask = _segmentFfmpegIn.WriteAsync(_videoBuffer, 0, _videoBuffer.Length);
+                }
 
                 if (framesToBeWritten != null)
                 {
                     framesToBeWritten.Enqueue(_videoBuffer);
+                }
+                if(segmentFramesToBeWritten != null)
+                {
+                    segmentFramesToBeWritten.Enqueue(_videoBuffer);
                 }
             }
             catch (Exception e)
@@ -258,6 +341,10 @@ namespace Captura.Models
                 if (framesToBeWritten.Count > 0)
                 {
                     AppendAllBytes(framesToBeWritten.Dequeue());
+                }
+                if(segmentFramesToBeWritten.Count > 0)
+                {
+                    AppendAllBytes(segmentFramesToBeWritten.Dequeue());
                 }
                 else
                 {

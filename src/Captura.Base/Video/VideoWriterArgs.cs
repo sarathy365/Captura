@@ -4,6 +4,7 @@ namespace Captura.Models
 {
     public class VideoWriterArgs
     {
+        public string SegmentFileName { get; set; }
         public string FileName { get; set; }
         public IImageProvider ImageProvider { get; set; }
         public int FrameRate { get; set; } = 15;
