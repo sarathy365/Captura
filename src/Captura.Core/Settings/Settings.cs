@@ -147,7 +147,7 @@ namespace Captura
             set => Set(value);
         }
 
-        public string GetFileName(string Extension, string FileName = null)
+        public string GetFileName(string Extension, string FileName = null, bool isFortenSecondsVideo = false, string folderName = null)
         {
             if (FileName != null)
                 return FileName;
@@ -179,6 +179,16 @@ namespace Captura
                 .Replace("%ss%", now.ToString("ss"))
                 .Replace("%tt%", now.ToString("tt"))
                 .Replace("%zzz%", now.ToString("zzz"));
+
+            if(isFortenSecondsVideo)
+            {
+                filename = $"{filename}_segment-%03d";
+                if(folderName != null)
+                {
+                    folderName = folderName.Substring(0, folderName.Length - 4);
+                    OutPath = folderName;
+                }
+            }
             
             var path = Path.Combine(OutPath, $"{filename}{Extension}");
 

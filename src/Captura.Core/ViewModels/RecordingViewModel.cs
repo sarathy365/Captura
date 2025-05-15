@@ -25,6 +25,7 @@ namespace Captura.ViewModels
         readonly Timing _timing = new Timing();
         IRecorder _recorder;
         string _currentFileName;
+        string _segmentFileName;
         bool _isVideo;
 
         readonly SynchronizationContext _syncContext = SynchronizationContext.Current;
@@ -270,6 +271,11 @@ namespace Captura.ViewModels
                 extension = x.Extension;
 
             _currentFileName = Settings.GetFileName(extension, FileName);
+
+            if(Settings.FFmpeg.RawBackup)
+            {
+                _segmentFileName = Settings.GetFileName(extension, null, isFortenSecondsVideo:true, folderName: _currentFileName);
+            }
 
             if (_videoViewModel.SelectedVideoWriterKind is FFmpegWriterProvider ||
                 _videoViewModel.SelectedVideoWriterKind is StreamingWriterProvider ||
@@ -596,6 +602,7 @@ namespace Captura.ViewModels
 
             return _videoViewModel.SelectedVideoWriter.GetVideoFileWriter(new VideoWriterArgs
             {
+                SegmentFileName = _segmentFileName,
                 FileName = FileName ?? _currentFileName,
                 FrameRate = Settings.Video.FrameRate,
                 VideoQuality = Settings.Video.Quality,
@@ -672,15 +679,22 @@ namespace Captura.ViewModels
         public async Task StopRecording()
         {
             FileRecentItem savingRecentItem = null;
+            FileRecentItem savingSegmentRecentItem = null;
 
             // Reference current file name
             var fileName = _currentFileName;
+            var segmentFileName = _segmentFileName;
 
             // Assume saving to file only when extension is present
             if (!_waiting && !string.IsNullOrWhiteSpace(_videoViewModel.SelectedVideoWriter.Extension))
             {
                 savingRecentItem = new FileRecentItem(_currentFileName, _isVideo ? RecentFileType.Video : RecentFileType.Audio, true);
                 _recentViewModel.Add(savingRecentItem);
+                if(!string.IsNullOrEmpty(_segmentFileName))
+                {
+                    savingSegmentRecentItem = new FileRecentItem(_segmentFileName, _isVideo ? RecentFileType.Video : RecentFileType.Audio, true);
+                    _recentViewModel.Add(savingSegmentRecentItem);
+                }
             }
 
             // Reference Recorder as it will be set to null
@@ -730,6 +744,10 @@ namespace Captura.ViewModels
             if (savingRecentItem != null)
             {
                 AfterSave(savingRecentItem);
+            }
+            if(savingSegmentRecentItem != null)
+            {
+                AfterSave(savingSegmentRecentItem);
             }
         }
 

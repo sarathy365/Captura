@@ -6,6 +6,7 @@
         {
             return new FFmpegVideoWriterArgs
             {
+                SegmentFileName = Args.SegmentFileName,
                 FileName = Args.FileName,
                 ImageProvider = Args.ImageProvider,
                 FrameRate = Args.FrameRate,
