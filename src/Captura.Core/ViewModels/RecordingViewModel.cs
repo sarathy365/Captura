@@ -274,7 +274,7 @@ namespace Captura.ViewModels
 
             if(Settings.FFmpeg.RawBackup)
             {
-                _segmentFileName = Settings.GetFileName(extension, null, isFortenSecondsVideo:true, folderName: _currentFileName);
+                _segmentFileName = Settings.GetFileName(extension, FileName : null, segmentVideoDirName : _currentFileName);
             }
 
             if (_videoViewModel.SelectedVideoWriterKind is FFmpegWriterProvider ||

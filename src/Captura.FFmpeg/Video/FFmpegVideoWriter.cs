@@ -117,9 +117,6 @@ namespace Captura.Models
                 .AddArg(Args.VideoArgsProvider(Args.VideoQuality))
                 .SetFrameRate(Args.FrameRate);
 
-            
-
-
             if (settings.Resize)
             {
                 var width = settings.ResizeWidth;
@@ -183,10 +180,14 @@ namespace Captura.Models
                     var height = settings.ResizeHeight;
 
                     if (width % 2 == 1)
+                    {
                         ++width;
+                    }
 
                     if (height % 2 == 1)
+                    {
                         ++height;
+                    }
                     output2.AddArg($"-vf scale={width}:{height}");
                 }
                 output2.AddArg(Args.OutputArgs);
@@ -293,11 +294,11 @@ namespace Captura.Models
                     {
                         throw new Exception("Cannot connect Video pipe 2 to FFmpeg");
                     }
-
                     _segmentFirstFrame = false;
                 }
 
                 _lastFrameTask?.Wait();
+
                 if(_segmentFfmpegIn != null)
                 {
                     _lastSegmentFrameTask?.Wait();
