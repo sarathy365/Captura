@@ -493,7 +493,15 @@ namespace Captura
                 Thread.Sleep(StartOptions.Delay);
 
             if (!ViewModel.RecordingViewModel.StartRecording(StartOptions.FileName))
-                return;
+            {
+                if(Regex.IsMatch(StartOptions.Source, @"^deskdupl:\d+$"))
+                {
+                    StartOptions.Source = StartOptions.Source.Replace("deskdupl", "screen");
+                    HandleVideoSource(ViewModel, StartOptions);
+                }
+                if (!ViewModel.RecordingViewModel.StartRecording(StartOptions.FileName))
+                    return;
+            }
 
             Task.Factory.StartNew(() =>
             {
